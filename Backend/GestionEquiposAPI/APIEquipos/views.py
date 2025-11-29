@@ -53,12 +53,21 @@ class EquipoViewDetailed(View):
             condiciones = list(CondicionesFuncionamiento.objects.filter(equipo=equipo_obj).values())
             metrologia_admin = list(MetrologiaAdministrativa.objects.filter(equipo=equipo_obj).values())
             metrologia_tecnica = list(MetrologiaTecnica.objects.filter(equipo=equipo_obj).values())
+            ubicacion = None
+            if equipo_obj.ubicacion:
+                ubicacion = {
+                    "id_ubicacion": equipo_obj.ubicacion.id_ubicacion,
+                    "nombre": equipo_obj.ubicacion.nombre
+                }
 
+            equipo["ubicacion_id"] = equipo_obj.ubicacion.id_ubicacion if equipo_obj.ubicacion else None
+            equipo["ubicacion__nombre"] = equipo_obj.ubicacion.nombre if equipo_obj.ubicacion else ""
             return JsonResponse({
                 "Message": "Success",
                 "equipo": equipo,
                 "sede": sede,
                 "servicio": servicio,
+                "ubicacion": ubicacion,
                 "historial": historial,
                 "documentos": documentos,
                 "condiciones": condiciones,

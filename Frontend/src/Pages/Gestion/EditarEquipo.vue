@@ -445,7 +445,7 @@ export default {
         "Docencia",
         "Administrativo"
       ],
-      riesgoOptions: ["NI", "Clase I", "Clase IIa"],
+      riesgoOptions: ["NI", "Clase I", "Clase IIa","Clase IIb", "Clase III"],
 
       // formulario (Estructura base)
       form: {
@@ -798,7 +798,7 @@ if (missing.length) {
           this.message = "Equipo actualizado correctamente.";
           // Retraso ligero antes de volver
           setTimeout(() => {
-              this.$router.push(`/gestion/equipo/${encodedCode}/`); 
+              this.$router.push(`/gestion/buscar`); 
           }, 1000);
         }
       } catch (err) {
