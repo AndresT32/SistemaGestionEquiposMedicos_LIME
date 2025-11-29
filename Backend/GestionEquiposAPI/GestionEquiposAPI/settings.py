@@ -91,7 +91,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql_psycopg2',
         'NAME':'EquiposMedicosLIMEdb',
         'USER': 'postgres',
-        'PASSWORD': 'password',
+        'PASSWORD': 'tamara07',
         'HOST': 'localhost',
         'PORT': '5432'
     }

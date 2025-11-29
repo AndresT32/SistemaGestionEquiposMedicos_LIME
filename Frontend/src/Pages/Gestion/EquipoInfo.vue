@@ -6,13 +6,13 @@
       <h1 class="titulo">Información Completa del Equipo</h1>
     </div>
 
-    <div class="top-bar">
+<div class="top-bar">
   <button class="btn-volver" @click="$router.back()">⬅ Volver</button>
 
-  <button class="btn-pdf">
-    📄 Descargar Excel
+  <button class="btn-excel" @click="descargarExcel">
+    📊 Descargar Excel
   </button>
-    </div>
+</div>
 
     <div class="section">
       <h2 class="section-header" @click="toggle(1)">
@@ -185,6 +185,19 @@ export default {
     },
 
     methods: {
+
+
+
+descargarExcel() {
+    const codigo = this.equipo.codigo_inventario;
+    
+    // Si el código es '178684 / 061551/', se convierte en '178684%20%2F%20061551'
+    const encodedCodigo = encodeURIComponent(codigo); 
+
+    const downloadUrl = `http://localhost:8081/api/descargar/${encodedCodigo}/`;
+    
+    window.open(downloadUrl, '_blank');
+},
         // Método para abrir/cerrar secciones
         toggle(id) {
             this.open[id] = !this.open[id];
@@ -354,5 +367,25 @@ export default {
 
 .btn-pdf:hover {
   background: #d0d0d0;
+}
+
+/* Estilo para el botón de descarga XLSX */
+.btn-excel {
+  background-color: #008F4C; /* Verde UdeA o similar */
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 15px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-excel:hover {
+  background-color: #005C33; 
 }
 </style>

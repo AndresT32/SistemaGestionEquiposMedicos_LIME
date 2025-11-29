@@ -1,5 +1,3 @@
-from django.shortcuts import render
-
 from django.http import JsonResponse
 from django.views import View
 from django.utils.decorators import method_decorator
@@ -9,6 +7,12 @@ from django.db.models import Q
 from .models import Equipo, Sede, Historial, Documento, MetrologiaAdministrativa, MetrologiaTecnica, CondicionesFuncionamiento, Ubicacion, Servicio
 from urllib.parse import unquote
 from django.urls import path
+
+from django.shortcuts import render
+from django.http import JsonResponse, HttpResponse # HttpResponse ya existe, pero lo verificamos
+import openpyxl
+from io import BytesIO
+
 
 @method_decorator(csrf_exempt, name='dispatch')
 class EquipoViewDetailed(View):
@@ -701,7 +705,153 @@ def autocomplete_equipo(request):
 
     return JsonResponse({"Message": "Campo no permitido"}, status=400)
 
+# views.py (Después de los imports, antes de la primera clase View)
 
+# ----------------------------------------------------------------------
+# Helper para aplanar el diccionario de datos (para una mejor presentación en Excel)
+# ----------------------------------------------------------------------
+def flatten_data(data):
+    """
+    Toma el diccionario de datos anidados del equipo y lo aplana
+    en una lista de tuplas (Campo, Valor) para el Excel.
+    """
+    flat_data = []
+
+    # 1. Equipo (campos directos)
+    if 'equipo' in data and data['equipo']:
+        for key, value in data['equipo'].items():
+            # Excluir campos internos o redundantes para el Excel
+            if key not in ['sede_id', 'servicio_id', 'ubicacion_id', 'id', 'fecha_baja']:
+                flat_data.append((f"Equipo - {key.replace('_', ' ').title()}", str(value) if value is not None else 'NI'))
+
+    # 2. Sede y Servicio (si vienen como objetos separados)
+    if 'sede' in data and data['sede']:
+        for key, value in data['sede'].items():
+            if key not in ['id']:
+                flat_data.append((f"Sede - {key.replace('_', ' ').title()}", str(value) if value is not None else 'NI'))
+
+    if 'servicio' in data and data['servicio']:
+        for key, value in data['servicio'].items():
+            if key not in ['id']:
+                flat_data.append((f"Servicio - {key.replace('_', ' ').title()}", str(value) if value is not None else 'NI'))
+
+    # 3. Relaciones múltiples (Historial, Documentos, etc.) - solo se toma el primer registro
+    relations = {
+        'historial': 'Historial',
+        'documentos': 'Documentación',
+        'metrologia_admin': 'Metrología Administrativa',
+        'metrologia_tecnica': 'Metrología Técnica',
+        'condiciones': 'Condiciones de Funcionamiento',
+    }
+
+    for key_json, title in relations.items():
+        if data.get(key_json) and len(data.get(key_json)) > 0:
+            related_data = data[key_json][0] # Tomar el primer elemento
+            for key, value in related_data.items():
+                # Excluir claves de ID internos
+                if not key.startswith('id_') and key not in ['equipo_id', 'equipo']:
+                    flat_data.append((f"{title} - {key.replace('_', ' ').title()}", str(value) if value is not None else 'NI'))
+    
+    return flat_data
+
+
+# ----------------------------------------------------------------------
+# VISTA PRINCIPAL: Generar y descargar XLSX
+# ----------------------------------------------------------------------
+def descargar_equipo_xlsx(request, codigo_inventario):
+    """
+    Genera un archivo XLSX con el detalle completo de un equipo.
+    """
+    codigo_inventario_decodificado = unquote(codigo_inventario)
+
+    # 1. Obtener la data detallada del equipo (Similar a EquipoViewDetailed.get)
+    try:
+        equipo_obj = Equipo.objects.get(codigo_inventario=codigo_inventario_decodificado)
+    except Equipo.DoesNotExist:
+        return HttpResponse("Equipo no encontrado", status=404)
+
+    # --- Construir el diccionario de datos (Idéntico a EquipoViewDetailed.get) ---
+    equipo = {**equipo_obj.__dict__}
+    equipo.pop("_state", None)
+
+    sede = None
+    if equipo_obj.sede:
+        sede = {
+            "codigo_sede": equipo_obj.sede.codigo_sede,
+            "nombre": equipo_obj.sede.nombre,
+            "direccion": equipo_obj.sede.direccion,
+        }
+
+    servicio = None
+    if equipo_obj.servicio:
+        servicio = {
+            "codigo_servicio": equipo_obj.servicio.codigo_servicio,
+            "nombre": equipo_obj.servicio.nombre,
+            "sede": equipo_obj.servicio.sede.codigo_sede if equipo_obj.servicio.sede else None
+        }
+
+    historial = list(Historial.objects.filter(equipo=equipo_obj).values())
+    documentos = list(Documento.objects.filter(equipo=equipo_obj).values())
+    condiciones = list(CondicionesFuncionamiento.objects.filter(equipo=equipo_obj).values())
+    metrologia_admin = list(MetrologiaAdministrativa.objects.filter(equipo=equipo_obj).values())
+    metrologia_tecnica = list(MetrologiaTecnica.objects.filter(equipo=equipo_obj).values())
+
+    data = {
+        "equipo": equipo,
+        "sede": sede,
+        "servicio": servicio,
+        "historial": historial,
+        "documentos": documentos,
+        "condiciones": condiciones,
+        "metrologia_admin": metrologia_admin,
+        "metrologia_tecnica": metrologia_tecnica
+    }
+    # --------------------------------------------------------------------------
+
+    # 2. Aplanar y generar el Excel
+    flat_data = flatten_data(data)
+    
+    output = BytesIO()
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Detalle Equipo"
+
+    # Escribir encabezados con estilos
+    sheet['A1'] = "Campo"
+    sheet['B1'] = "Valor"
+    header_font = openpyxl.styles.Font(bold=True, color="FFFFFF")
+    header_fill = openpyxl.styles.PatternFill(start_color="005C33", end_color="005C33", fill_type="solid")
+    sheet['A1'].font = header_font
+    sheet['A1'].fill = header_fill
+    sheet['B1'].font = header_font
+    sheet['B1'].fill = header_fill
+
+    # Escribir los datos
+    row_num = 2
+    for campo, valor in flat_data:
+        sheet[f'A{row_num}'] = campo
+        sheet[f'B{row_num}'] = valor
+        row_num += 1
+
+    sheet.column_dimensions['A'].width = 40
+    sheet.column_dimensions['B'].width = 50
+
+    workbook.save(output)
+    output.seek(0)
+
+    # 3. Preparar la respuesta HTTP para la descarga
+    filename = f"Equipo_{codigo_inventario_decodificado.replace(' ', '_')}.xlsx"
+    response = HttpResponse(
+        output,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+    return response
+
+# @method_decorator(csrf_exempt, name='dispatch')
+# class EquipoViewDetailed(View):
+# ... (El resto de su archivo continúa aquí)
 
 
 

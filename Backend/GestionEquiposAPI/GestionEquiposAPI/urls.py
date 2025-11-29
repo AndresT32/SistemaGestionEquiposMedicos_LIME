@@ -56,4 +56,6 @@ urlpatterns = [
     path("api/estadisticas/", include("APIEquipos.urls_estadisticas")),
     path("api/autocomplete/", include("APIEquipos.urls_autocomplete")),
 
+    path("api/descargar/", include("APIEquipos.urls_descargar")),
+
 ]
