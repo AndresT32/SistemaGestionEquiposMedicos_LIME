@@ -57,5 +57,6 @@ urlpatterns = [
     path("api/autocomplete/", include("APIEquipos.urls_autocomplete")),
 
     path("api/descargar/", include("APIEquipos.urls_descargar")),
+    path("api/dar_baja/", include("APIEquipos.urls_darDebaja")),
 
 ]

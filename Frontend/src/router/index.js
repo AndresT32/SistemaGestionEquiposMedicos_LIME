@@ -6,10 +6,18 @@ import Login from "../Pages/Login/Login.vue";
 import Registro from "../Pages/Login/Registro.vue";
 import AgregarEquipo from "../Pages/Gestion/AgregarEquipo.vue"
 import EditarEquipo from "../Pages/Gestion/EditarEquipo.vue"
+import DarDebaja from "../Pages/Gestion/DarDebaja.vue"
 
 const routes = [
   // 👉 Pantalla inicial: login
   { path: "/", redirect: "/login" },
+
+  {
+  path: "/gestion/baja",
+  name: "DarDeBaja",
+  component: DarDebaja,
+  meta: { requiresAuth: true }
+},
 
   { path: "/login", name: "login", component: Login, meta: {hideNavbar: true} },
   { path: "/registro", name: "registro", component: Registro, meta: {hideNavbar: true} },
@@ -60,7 +68,8 @@ path: '/gestion/equipo/editar/:codigo_inventario', // La URL espera el código
   },
 
   // 👉 Rutas inexistentes → redirigir al login
-  { path: "/:catchAll(.*)", redirect: "/login" }
+  { path: "/:catchAll(.*)", redirect: "/login" },
+  
 ];
 
 const router = createRouter({

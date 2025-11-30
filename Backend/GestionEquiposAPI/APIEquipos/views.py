@@ -849,9 +849,38 @@ def descargar_equipo_xlsx(request, codigo_inventario):
 
     return response
 
-# @method_decorator(csrf_exempt, name='dispatch')
-# class EquipoViewDetailed(View):
-# ... (El resto de su archivo continúa aquí)
+
+@csrf_exempt
+def dar_baja_equipo(request, codigo_inventario):
+    if request.method != "PUT":
+        return JsonResponse({"Message": "Método no permitido"}, status=405)
+
+    try:
+        equipo = Equipo.objects.get(codigo_inventario=codigo_inventario)
+    except Equipo.DoesNotExist:
+        return JsonResponse({"Message": "Equipo no encontrado"}, status=404)
+
+    data = json.loads(request.body)
+
+    motivo = data.get("motivo_baja", "").strip()
+    usuario = data.get("usuario", "desconocido")
+
+    if not motivo:
+        return JsonResponse({"Message": "Debe ingresar un motivo de baja"}, status=400)
+
+    # Guardar datos de baja
+    from datetime import datetime
+    fecha_hoy = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    equipo.motivo_baja = motivo
+    equipo.fecha_baja = fecha_hoy
+    equipo.activo = False
+    equipo.save()
+    
+    return JsonResponse({
+        "Message": "Equipo dado de baja correctamente",
+        "fecha_baja": fecha_hoy
+    })
 
 
 

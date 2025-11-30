@@ -695,7 +695,7 @@ export default {
         if (res.data && res.data.Message) {
           this.message = res.data.Message;
           // navegar a detalle
-          this.$router.push(`/gestion/equipo/${encodeURIComponent(this.form.codigo_inventario)}/`).catch(()=>{});
+          this.$router.push(`/gestion/nuevo/`).catch(()=>{});
         }
       } catch (err) {
         const msg = err.response && err.response.data && err.response.data.Message ? err.response.data.Message : "Error creando equipo";
