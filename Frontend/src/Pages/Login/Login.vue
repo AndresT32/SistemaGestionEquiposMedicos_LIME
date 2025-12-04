@@ -72,7 +72,7 @@
 
         <p class="text-center text-muted mt-3">
             ¿No tienes una cuenta? 
-            <a href="#" class="register-link-udea fw-bold" @click="$router.push({ name: 'registro' })">
+            <a href="#" class="register-link-udea fw-bold" @click.prevent="abrirModalRegistro">
                 Regístrate
             </a>
         </p>
@@ -87,6 +87,97 @@
 
     </div>
   </div>
+  <!-- ==== MODAL REGISTRO + CAMBIO DE CONTRASEÑA ==== -->
+<div v-if="mostrarModal" class="modal-overlay">
+  <div class="modal-box">
+
+    <!-- TÍTULO -->
+    <h3 class="modal-title">
+      <span v-if="!modoCambioPassword">Acceso al Registro</span>
+      <span v-else>Cambiar Contraseña del Administrador</span>
+    </h3>
+
+    <!-- =======================
+         MODO VALIDAR REGISTRO
+         ======================= -->
+    <div v-if="!modoCambioPassword">
+
+      <p class="modal-text">Ingresa la contraseña de autorización:</p>
+
+      <input 
+        v-model="claveRegistro" 
+        type="password" 
+        placeholder="Contraseña"
+        class="modal-input"
+      />
+
+      <div 
+        v-if="mensajeRegistro" 
+        class="modal-alert"
+        :class="exitoRegistro ? 'success' : 'error'"
+      >
+        {{ mensajeRegistro }}
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-cancel" @click="cerrarModal">Cancelar</button>
+        <button class="btn-confirm" @click="validarClaveRegistro">Continuar</button>
+      </div>
+
+      <!-- 🔧 Botón cambiar contraseña -->
+      <div class="text-center mt-3">
+        <a href="#" class="change-pass-link" @click.prevent="activarModoCambio">
+          ¿Deseas cambiar la contraseña del administrador?
+        </a>
+      </div>
+
+    </div>
+
+    <!-- =========================
+         MODO CAMBIAR CONTRASEÑA
+         ========================= -->
+    <div v-else>
+
+      <p class="modal-text">Actualiza la contraseña del administrador:</p>
+
+      <input 
+        v-model="passwordActual" 
+        type="password" 
+        placeholder="Contraseña actual"
+        class="modal-input"
+      />
+
+      <input 
+        v-model="passwordNueva" 
+        type="password" 
+        placeholder="Nueva contraseña"
+        class="modal-input"
+      />
+
+      <input 
+        v-model="passwordConfirm" 
+        type="password" 
+        placeholder="Confirmar nueva contraseña"
+        class="modal-input"
+      />
+
+      <div 
+        v-if="mensajeCambioPassword" 
+        class="modal-alert"
+        :class="exitoCambioPassword ? 'success' : 'error'"
+      >
+        {{ mensajeCambioPassword }}
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-cancel" @click="activarModoValidacion">Volver</button>
+        <button class="btn-confirm" @click="cambiarPasswordAdmin">Guardar</button>
+      </div>
+
+    </div>
+
+  </div>
+</div>
 </template>
 
 <script setup>
@@ -149,6 +240,120 @@ const login = async () => {
 
   } finally {
     password.value = ""
+  }
+}
+
+
+/* ===========================
+     MODAL GENERAL
+=========================== */
+const mostrarModal = ref(false)
+const modoCambioPassword = ref(false)  // <-- lo movemos arriba para evitar el warning
+
+const abrirModalRegistro = () => {
+  mostrarModal.value = true
+  modoCambioPassword.value = false
+}
+
+const cerrarModal = () => {
+  mostrarModal.value = false
+}
+
+
+/* ===========================
+     VALIDAR CLAVE DE REGISTRO
+=========================== */
+const claveRegistro = ref("")
+const mensajeRegistro = ref("")
+const exitoRegistro = ref(false)
+
+const validarClaveRegistro = async () => {
+  try {
+    const res = await axios.post("http://127.0.0.1:8081/api/login/", {
+      accion: "validar_registro",
+      clave: claveRegistro.value  // aquí envías lo que el usuario ingresa
+    });
+
+    if (res.data.success) {
+      exitoRegistro.value = true;
+      mensajeRegistro.value = "Autorización correcta. Redirigiendo...";
+
+      setTimeout(() => {
+        cerrarModal();
+        router.push({ name: "registro" });
+      }, 800);
+
+    } else {
+      exitoRegistro.value = false;
+      mensajeRegistro.value = res.data.error || "Contraseña incorrecta.";
+    }
+
+  } catch (err) {
+    exitoRegistro.value = false;
+    mensajeRegistro.value = "Error en la validación del servidor.";
+  }
+};
+
+
+
+/* ===========================
+     CAMBIO DE CONTRASEÑA ADMIN
+=========================== */
+const passwordActual = ref("")
+const passwordNueva = ref("")
+const passwordConfirm = ref("")
+
+const mensajeCambioPassword = ref("")
+const exitoCambioPassword = ref(false)
+
+const activarModoCambio = () => {
+  modoCambioPassword.value = true
+  mensajeRegistro.value = ""
+}
+
+const activarModoValidacion = () => {
+  modoCambioPassword.value = false
+  mensajeCambioPassword.value = ""
+}
+
+const cambiarPasswordAdmin = async () => {
+
+  mensajeCambioPassword.value = ""
+
+  if (passwordNueva.value !== passwordConfirm.value) {
+    exitoCambioPassword.value = false
+    mensajeCambioPassword.value = "Las contraseñas no coinciden."
+    return
+  }
+
+  try {
+    const res = await axios.post("http://127.0.0.1:8081/api/login/", {
+      accion: "cambiar_password_admin",
+      password_actual: passwordActual.value,
+      password_nueva: passwordNueva.value,
+    })
+
+    if (res.data.success) {
+      exitoCambioPassword.value = true
+      mensajeCambioPassword.value = "Contraseña actualizada correctamente."
+
+      passwordActual.value = ""
+      passwordNueva.value = ""
+      passwordConfirm.value = ""
+
+      setTimeout(() => {
+        modoCambioPassword.value = false
+        mensajeRegistro.value = ""
+      }, 800)
+
+    } else {
+      exitoCambioPassword.value = false
+      mensajeCambioPassword.value = res.data.error
+    }
+
+  } catch (err) {
+    exitoCambioPassword.value = false
+    mensajeCambioPassword.value = "Error realizando el cambio."
   }
 }
 </script>
@@ -270,4 +475,105 @@ const login = async () => {
     width: 100%;
   }
 }
+
+/* Fondo oscurecido */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+/* Caja del modal */
+.modal-box {
+  background: #fff;
+  padding: 25px;
+  width: 350px;
+  border-radius: 12px;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.2);
+  animation: fadeIn 0.25s ease-out;
+}
+
+/* Títulos y textos */
+.modal-title {
+  font-size: 20px;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.modal-text {
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.modal-input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #bbb;
+  border-radius: 8px;
+  outline: none;
+}
+
+/* Alertas */
+.modal-alert {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.modal-alert.success {
+  background: #d4edda;
+  color: #155724;
+}
+
+.modal-alert.error {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+/* Botones */
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+  gap: 10px;
+}
+
+.btn-cancel {
+  padding: 8px 14px;
+  background: #ccc;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn-confirm {
+  padding: 8px 14px;
+  background: #0f6fff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Animación suave */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 </style>

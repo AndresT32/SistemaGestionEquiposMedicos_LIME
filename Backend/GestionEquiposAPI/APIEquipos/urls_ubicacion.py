@@ -5,3 +5,9 @@ urlpatterns = [
     path('', UbicacionView.as_view()),
     path('<int:id_ubicacion>/', UbicacionView.as_view()),
 ]
+
+
+
+
+
+

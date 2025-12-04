@@ -1,6 +1,8 @@
 from django.apps import AppConfig
 
-
-class ApiequiposConfig(AppConfig):
+class ApiloginConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'APILogin'
+
+    def ready(self):
+        import APILogin.signals   

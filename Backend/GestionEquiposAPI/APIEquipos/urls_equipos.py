@@ -1,7 +1,11 @@
 from django.urls import path, re_path
-from .views import EquipoView
+from . import views 
 
 urlpatterns = [
-    path('', EquipoView.as_view()),
-    re_path(r'(?P<codigo_inventario>.+)/$', EquipoView.as_view()),
+    # Ruta raíz (Buscar)
+    path('', views.EquipoView.as_view()),
+
+    # IMPORTANTE: Llamamos a 'EquipoViewDetailed' porque ahí está el método PUT
+    re_path(r'(?P<codigo_inventario>.+)/$', views.EquipoViewDetailed.as_view()),
 ]
+

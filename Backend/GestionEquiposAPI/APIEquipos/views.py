@@ -1,26 +1,31 @@
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views import View
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 import json
 from django.db.models import Q
-from .models import Equipo, Sede, Historial, Documento, MetrologiaAdministrativa, MetrologiaTecnica, CondicionesFuncionamiento, Ubicacion, Servicio
+# IMPORTANTE: Asegúrate de importar RegistroActividades
+from .models import Equipo, Sede, Historial, Documento, MetrologiaAdministrativa, MetrologiaTecnica, CondicionesFuncionamiento, Ubicacion, Servicio, RegistroActividades
 from urllib.parse import unquote
-from django.urls import path
-
-from django.shortcuts import render
-from django.http import JsonResponse, HttpResponse # HttpResponse ya existe, pero lo verificamos
 import openpyxl
 from io import BytesIO
+from datetime import datetime 
 
 
+# --- FUNCIÓN DE AYUDA GLOBAL ---
+def ni_or(val):
+    if val is None: return "NI"
+    if isinstance(val, str) and val.strip() == "": return "NI"
+    return val
+# ----------------------------------------------------------------------
+# VISTA DETALLADA (Para EquipoInfo.vue y Edición)
+# ----------------------------------------------------------------------
 @method_decorator(csrf_exempt, name='dispatch')
 class EquipoViewDetailed(View):
 
-    # ---------------------- GET ----------------------
+    # --- GET: Obtener detalle completo de un equipo ---
+# ---------------------- GET DETALLADO ----------------------
     def get(self, request, codigo_inventario=None):
-
-    # Si piden un equipo específico
         if codigo_inventario:
             codigo_inventario_decodificado = unquote(codigo_inventario)
             try:
@@ -29,9 +34,7 @@ class EquipoViewDetailed(View):
                 return JsonResponse({"Message": "Equipo no encontrado"}, status=404)
 
             # Equipo base
-            equipo = {
-                **equipo_obj.__dict__
-            }
+            equipo = {**equipo_obj.__dict__}
             equipo.pop("_state", None)
 
             # Relaciones simples
@@ -57,15 +60,29 @@ class EquipoViewDetailed(View):
             condiciones = list(CondicionesFuncionamiento.objects.filter(equipo=equipo_obj).values())
             metrologia_admin = list(MetrologiaAdministrativa.objects.filter(equipo=equipo_obj).values())
             metrologia_tecnica = list(MetrologiaTecnica.objects.filter(equipo=equipo_obj).values())
+            
+            # --- NUEVO: OBTENER EL HISTORIAL DE CAMBIOS DE UBICACIÓN ---
+            # Filtramos por el equipo y ordenamos por fecha descendente (lo más nuevo primero)
+            # Nota: Usamos -id_registro como proxy de tiempo si la fecha es string, o convertimos si es necesario.
+            registros_ubicacion = list(RegistroActividades.objects.filter(equipo=equipo_obj).values().order_by('-id_registro'))
+            # -----------------------------------------------------------
+            
             ubicacion = None
+            # --- UBICACIÓN ---
             if equipo_obj.ubicacion:
-                ubicacion = {
-                    "id_ubicacion": equipo_obj.ubicacion.id_ubicacion,
-                    "nombre": equipo_obj.ubicacion.nombre
-                }
+                equipo["ubicacion_id"] = equipo_obj.ubicacion.id_ubicacion
+                equipo["ubicacion__nombre"] = equipo_obj.ubicacion.nombre
+            else:
+                equipo["ubicacion_id"] = None
+                equipo["ubicacion__nombre"] = ""
 
             equipo["ubicacion_id"] = equipo_obj.ubicacion.id_ubicacion if equipo_obj.ubicacion else None
-            equipo["ubicacion__nombre"] = equipo_obj.ubicacion.nombre if equipo_obj.ubicacion else ""
+            equipo["ubicacion_nombre"] = equipo_obj.ubicacion.nombre if equipo_obj.ubicacion else ""
+            equipo["sede_nombre"] = equipo_obj.sede.nombre if equipo_obj.sede else ""
+            equipo["servicio_nombre"] = equipo_obj.servicio.nombre if equipo_obj.servicio else ""
+
+            
+
             return JsonResponse({
                 "Message": "Success",
                 "equipo": equipo,
@@ -76,281 +93,298 @@ class EquipoViewDetailed(View):
                 "documentos": documentos,
                 "condiciones": condiciones,
                 "metrologia_admin": metrologia_admin,
-                "metrologia_tecnica": metrologia_tecnica
+                "metrologia_tecnica": metrologia_tecnica,
+                "registros_ubicacion": registros_ubicacion, # <--- AGREGADO A LA RESPUESTA
             }, safe=False)
 
-        # Si no enviaron código → lista normal
         equipos = list(Equipo.objects.values())
         return JsonResponse({"Message": "Success", "equipos": equipos})
 
-
-
-    # ---------------------- POST ----------------------
-    def post(self, request):
-        data = json.loads(request.body)
-
-        # Buscar FK: sede
-        sede_obj = None
-        if data.get("sede"):
-            try:
-                sede_obj = Sede.objects.get(codigo_sede=data["sede"])
-            except Sede.DoesNotExist:
-                return JsonResponse({"Message": "Código de sede no válido"})
-
-        # Buscar FK: area
-        area_obj = None
-        if data.get("area"):
-            try:
-                area_obj = Area.objects.get(codigo_area=data["area"])
-            except Area.DoesNotExist:
-                return JsonResponse({"Message": "Código de área no válido"})
-
-        # Crear el equipo
-        Equipo.objects.create(
-            codigo_inventario=data["codigo_inventario"],
-            #proceso=data.get("proceso"), #Se quita y ya
-            nombre=data["nombre"],
-            codigo_ips=data.get("codigo_ips"),
-            codigo_ecri=data.get("codigo_ecri"),
-            responsable=data.get("responsable"),
-            sede=sede_obj,
-            area=area_obj,
-            ubicacion=data.get("ubicacion"),
-            motivo_cambio_ubi=data.get("motivo_cambio_ubi"),
-            marca=data.get("marca"),
-            modelo=data.get("modelo"),
-            serie=data.get("serie"),
-            clasificacion_misional=data.get("clasificacion_misional"),
-            clasificacion_ips=data.get("clasificacion_ips"),
-            clasificacion_riesgo=data.get("clasificacion_riesgo"),
-            registro_invima=data.get("registro_invima"),
-
-            modificacionUbi=data.get("modificacionUbi"),
-            modificacionactivo=data.get("modificacionactivo"),
-            modificacionCodigo=data.get("modificacionCodigo"),
-
-            activo=data.get("activo", True),
-            fecha_baja=data.get("fecha_baja"),
-            motivo_baja=data.get("motivo_baja"),
-        )
-
-        return JsonResponse({"Message": "Equipo creado exitosamente"})
-
-
-    # ---------------------- PUT ----------------------
-    def put(self, request, codigo_inventario):
-       # en put(self, request, codigo_inventario):
-        data = json.loads(request.body)
-        try:
-            equipo = Equipo.objects.get(codigo_inventario=codigo_inventario)
-        except Equipo.DoesNotExist:
-            return JsonResponse({"Message": "Equipo no encontrado"}, status=404)
-
-        # update FK sede
-        if data.get("sede"):
-            try:
-                equipo.sede = Sede.objects.get(codigo_sede=data["sede"])
-            except Sede.DoesNotExist:
-                return JsonResponse({"Message": "Código de sede no válido"}, status=400)
-
-        # servicio
-        if data.get("servicio"):
-            try:
-                equipo.servicio = Servicio.objects.get(codigo_servicio=data["servicio"])
-            except Servicio.DoesNotExist:
-                return JsonResponse({"Message": "Código de servicio no válido"}, status=400)
-
-        # ubicacion
-        if data.get("ubicacion"):
-            try:
-                equipo.ubicacion = Ubicacion.objects.get(id_ubicacion=int(data["ubicacion"]))
-            except (ValueError, Ubicacion.DoesNotExist):
-                try:
-                    equipo.ubicacion = Ubicacion.objects.get(nombre__iexact=data["ubicacion"])
-                except Ubicacion.DoesNotExist:
-                    # opcional: crear nueva ubicacion?
-                    equipo.ubicacion = None
-
-        # actualizar otros campos
-        for campo, valor in data.items():
-            if hasattr(equipo, campo) and campo not in ("sede", "servicio", "ubicacion"):
-                setattr(equipo, campo, valor)
-
-        equipo.save()
-        return JsonResponse({"Message": "Equipo actualizado correctamente"})
-
-
-    # ---------------------- DELETE ----------------------
-    def delete(self, request, codigo_inventario):
-        count, _ = Equipo.objects.filter(codigo_inventario=codigo_inventario).delete()
-        if count:
-            return JsonResponse({"Message": "Equipo eliminado"})
-        return JsonResponse({"Message": "Equipo no encontrado"})
-
-@method_decorator(csrf_exempt, name='dispatch')
-class EquipoView(View):
-
-    def get(self, request, codigo_inventario=None):
-        # 1. Búsqueda exacta por ID (URL)
-        if codigo_inventario:
-            equipo = list(Equipo.objects.filter(codigo_inventario=codigo_inventario).values())
-            if equipo:
-                return JsonResponse({"Message": "Success", "equipo": equipo[0]})
-            else:
-                return JsonResponse({"Message": "Equipo no encontrado"}, status=404)
-        
-        # INICIO DE CAMBIOS PARA FILTROS
-        
-        # Obtener queryset base (todos los equipos)
-        queryset = Equipo.objects.all()
-
-        # 2. Filtro de búsqueda general (?q=)
-        query = request.GET.get('q', '').strip()
-        if query:
-            # Aplicar filtro general a nombre y código de inventario
-            queryset = queryset.filter(
-                Q(nombre__icontains=query) | 
-                Q(codigo_inventario__icontains=query)
-            )
-
-        # 3. Filtros Específicos (AJUSTADO PARA MATCH CON EL FRONTEND)
-        
-        # Leemos los nombres de parámetros que envía el frontend:
-        sede_nombre = request.GET.get('sede__nombre')
-        servicio_nombre = request.GET.get('servicio__nombre')
-        marca = request.GET.get('marca')
-        modelo = request.GET.get('modelo')
-        serie = request.GET.get('serie')
-        codigo_ips = request.GET.get('codigo_ips')
-        registro_invima = request.GET.get('registro_invima')
-        # ubicacion = request.GET.get('ubicacion') # Comentado, ya que no lo envías en tu frontend
-
-        # Aplicación de los filtros al queryset
-
-        if sede_nombre:
-            # Filtrar por el nombre de la sede (relación inversa __nombre)
-            queryset = queryset.filter(sede__nombre=sede_nombre)
-        
-        if servicio_nombre:
-            # Filtrar por el nombre del servicio/área (relación inversa __nombre)
-            queryset = queryset.filter(servicio__nombre=servicio_nombre)
-            
-        # NUEVOS FILTROS AÑADIDOS
-        if marca:
-            # Filtrar por marca
-            queryset = queryset.filter(marca=marca)
-            
-        if modelo:
-            # Filtrar por modelo
-            queryset = queryset.filter(modelo=modelo)
-            
-        if serie:
-            # Filtrar por serie
-            queryset = queryset.filter(serie=serie)
-            
-        if codigo_ips:
-            # Filtrar por código IPS
-            queryset = queryset.filter(codigo_ips=codigo_ips)
-
-        # Convertir a lista de valores
-        # Traemos solo lo necesario para la tabla de resultados
-        equipos = list(queryset.values(
-            'codigo_inventario', 
-            'nombre', 
-            'marca', 
-            'modelo', 
-            'sede__nombre', 
-            'servicio__nombre',
-            'serie',
-            'codigo_ips',
-            'registro_invima',
-            'clasificacion_riesgo'
-        ))
-
-        if equipos:
-            return JsonResponse({"Message": "Success", "equipos": equipos})
-        else:
-            return JsonResponse({"Message": "No se encontraron equipos con esos filtros", "equipos": []})
-        
-        # ---------------------- POST ----------------------
-    def post(self, request):
-        """
-        Crea un Equipo + objetos relacionados opcionales.
-        Reglas:
-         - Campos string vacíos -> 'NI'
-         - activo siempre True al crear
-         - sede obligatorio (valida existencia)
-         - servicio: si no existe, se crea (según requerimiento)
-         - ubicacion: acepta id o nombre; si nombre no existe -> crear nueva
-         - Campos de fecha se guardan como string (ISO) tal como vienen
-         - Si vienen bloques de 'historial', 'documentos', 'metrologia_admin', 'metrologia_tecnica', 'condiciones' -> crear
-        """
+    # --- POST: Crear Nuevo Equipo ---
+    
+    # --- PUT: Actualizar Equipo (CON AUDITORÍA DE UBICACIÓN) ---
+    def put(self, request, codigo_inventario=None):
         try:
             data = json.loads(request.body)
         except Exception:
             return JsonResponse({"Message": "JSON inválido"}, status=400)
 
-        # --- Validaciones básicas obligatorias ---
+        if not codigo_inventario:
+            return JsonResponse({"Message": "Falta código inventario"}, status=400)
+
+        try:
+            equipo = Equipo.objects.get(codigo_inventario=codigo_inventario)
+        except Equipo.DoesNotExist:
+            return JsonResponse({"Message": "Equipo no encontrado"}, status=404)
+
+        def ni_or(val):
+            if val is None: return "NI"
+            if isinstance(val, str) and val.strip() == "": return "NI"
+            return val
+
+        # ==============================================================================
+        # 1. LÓGICA DE AUDITORÍA: CAMBIO DE UBICACIÓN
+        # ==============================================================================
+        old_ubicacion_obj = equipo.ubicacion
+        nombre_origen = old_ubicacion_obj.nombre if old_ubicacion_obj else "Sin Ubicación"
+        
+        nuevo_ubicacion_obj = old_ubicacion_obj # Por defecto mantenemos la misma
+
+        if data.get("ubicacion"):
+            try:
+                # Intentamos buscar por ID
+                nuevo_ubicacion_obj = Ubicacion.objects.get(id_ubicacion=int(data["ubicacion"]))
+            except (ValueError, TypeError, Ubicacion.DoesNotExist):
+                try:
+                    # Intentamos buscar por Nombre
+                    nuevo_ubicacion_obj = Ubicacion.objects.get(nombre__iexact=data["ubicacion"])
+                except Ubicacion.DoesNotExist:
+                    # Crear nueva ubicación si no existe
+                    nuevo_ubicacion_obj = Ubicacion.objects.create(nombre=data["ubicacion"])
+        
+        # Comparamos si hubo cambio real
+        if old_ubicacion_obj != nuevo_ubicacion_obj:
+            motivo = data.get("motivo_cambio_ubi", "").strip()
+            
+            # Validación estricta: Si cambia ubicación, motivo es obligatorio
+            if not motivo:
+                return JsonResponse({
+                    "Message": "⚠️ Al cambiar la ubicación, el motivo es obligatorio."
+                }, status=400)
+
+            # Crear el registro de auditoría en tabla registro_actividades
+            try:
+                RegistroActividades.objects.create(
+                    equipo=equipo,
+                    usuario=data.get("responsable", "Sistema"), # O usuario logueado si lo envías
+                    tipo_modificacion="Traslado / Cambio Ubicación",
+                    fecha_modificacion=datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    motivoCambio=motivo,
+                    origenUbi=nombre_origen,
+                    destinoUbi=nuevo_ubicacion_obj.nombre,
+                    responsable=data.get("responsable", equipo.responsable)
+                )
+            except Exception as e:
+                print(f"Error guardando auditoría: {e}")
+
+            # Asignar la nueva ubicación al objeto equipo
+            equipo.ubicacion = nuevo_ubicacion_obj
+
+        # ==============================================================================
+        # 2. ACTUALIZACIÓN DEL RESTO DE CAMPOS
+        # ==============================================================================
+
+        if data.get("sede"):
+            try:
+                equipo.sede = Sede.objects.get(codigo_sede=data["sede"])
+            except Sede.DoesNotExist: pass
+
+        if data.get("servicio"):
+            svc = data.get("servicio")
+            try:
+                equipo.servicio = Servicio.objects.get(codigo_servicio=svc)
+            except Servicio.DoesNotExist:
+                try:
+                    equipo.servicio = Servicio.objects.get(nombre__iexact=svc, sede=equipo.sede)
+                except Servicio.DoesNotExist:
+                    codigo_gen = f"SVC-{equipo.sede.codigo_sede}-{svc[:10].upper().replace(' ','')}"
+                    equipo.servicio = Servicio.objects.create(codigo_servicio=codigo_gen, sede=equipo.sede, nombre=svc)
+
+        # Campos directos
+        equipo.nombre = data.get("nombre", equipo.nombre)
+        equipo.marca = ni_or(data.get("marca"))
+        equipo.modelo = data.get("modelo", equipo.modelo)
+        equipo.serie = ni_or(data.get("serie"))
+        equipo.responsable = ni_or(data.get("responsable"))
+        equipo.registro_invima = ni_or(data.get("registro_invima"))
+        equipo.clasificacion_riesgo = ni_or(data.get("clasificacion_riesgo"))
+        # (Agrega aquí otros campos simples si faltan en tu modelo, ej: clasificacion_misional)
+        clas_misional = data.get("clasificacion_misional")
+        if isinstance(clas_misional, list):
+             equipo.clasificacion_misional = "/".join([c for c in clas_misional if c])
+        elif clas_misional:
+             equipo.clasificacion_misional = ni_or(clas_misional)
+
+        try:
+            equipo.save()
+        except Exception as e:
+            return JsonResponse({"Message": "Error guardando equipo", "detail": str(e)}, status=500)
+
+        # Actualizar Relaciones (Update or Create)
+        if data.get("historial"):
+            h = data.get("historial")
+            defaults_h = {
+                "tiempo_vida_anos": ni_or(h.get("tiempo_vida_anos")),
+                "fecha_adquisicion": str(h.get("fecha_adquisicion")) if h.get("fecha_adquisicion") else "NI",
+                "propietario": ni_or(h.get("propietario")),
+                "fecha_fabricacion": ni_or(h.get("fecha_fabricacion")),
+                "nit": ni_or(h.get("nit")),
+                "proveedor": ni_or(h.get("proveedor")),
+                "garantia": bool(h.get("garantia")),
+                "fecha_caducidad_garantia": ni_or(h.get("fecha_caducidad_garantia")),
+                "forma_adquisicion": ni_or(h.get("forma_adquisicion")),
+                "tipo_documento": ni_or(h.get("tipo_documento")),
+                "numero_documento": ni_or(h.get("numero_documento")),
+                "valor_compra": ni_or(h.get("valor_compra")),
+                "id_historial": h.get("id_historial") or f"H-{equipo.codigo_inventario}"
+            }
+            Historial.objects.update_or_create(equipo=equipo, defaults=defaults_h)
+
+        if data.get("documentos"):
+            d = data.get("documentos")
+            defaults_d = {
+                "hoja_vida": bool(d.get("hoja_vida")),
+                "registro_importacion": bool(d.get("registro_importacion")),
+                "manual_operacion": bool(d.get("manual_operacion")),
+                "manual_mantenimiento": bool(d.get("manual_mantenimiento")),
+                "guia_uso": bool(d.get("guia_uso")),
+                "instructivo_rapido": bool(d.get("instructivo_rapido")),
+                "protocolo_mto_prev": bool(d.get("protocolo_mto_prev")),
+                "frecuencia_metrologica_fabricante": ni_or(d.get("frecuencia_metrologica_fabricante")),
+                "observaciones": ni_or(d.get("observaciones")),
+                "id_documento": d.get("id_documento") or f"D-{equipo.codigo_inventario}"
+            }
+            Documento.objects.update_or_create(equipo=equipo, defaults=defaults_d)
+
+        if data.get("metrologia_admin"):
+            m = data.get("metrologia_admin")
+            defaults_ma = {
+                "mantenimiento": bool(m.get("mantenimiento")),
+                "frecuencia_mantenimiento_anual": ni_or(m.get("frecuencia_mantenimiento_anual")),
+                "calibracion": bool(m.get("calibracion")),
+                "frecuencia_calibracion_anual": ni_or(m.get("frecuencia_calibracion_anual")),
+                "id_metrologia_adm": m.get("id_metrologia_adm") or f"MA-{equipo.codigo_inventario}"
+            }
+            MetrologiaAdministrativa.objects.update_or_create(equipo=equipo, defaults=defaults_ma)
+
+        if data.get("metrologia_tecnica"):
+            t = data.get("metrologia_tecnica")
+            defaults_mt = {
+                "magnitud": ni_or(t.get("magnitud")),
+                "rango_equipo": ni_or(t.get("rango_equipo")),
+                "resolucion": ni_or(t.get("resolucion")),
+                "rango_trabajo": ni_or(t.get("rango_trabajo")),
+                "error_maximo_permitido": ni_or(t.get("error_maximo_permitido")),
+                "id_metrologia_tecnica": t.get("id_metrologia_tecnica") or f"MT-{equipo.codigo_inventario}"
+            }
+            MetrologiaTecnica.objects.update_or_create(equipo=equipo, defaults=defaults_mt)
+
+        if data.get("condiciones"):
+            c = data.get("condiciones")
+            defaults_cf = {
+                "voltaje": ni_or(c.get("voltaje")),
+                "corriente": ni_or(c.get("corriente")),
+                "humedad_relativa": ni_or(c.get("humedad_relativa")),
+                "temperatura": ni_or(c.get("temperatura")),
+                "dimensiones": ni_or(c.get("dimensiones")),
+                "peso": ni_or(c.get("peso")),
+                "otros": ni_or(c.get("otros")),
+                "id_condiciones": c.get("id_condiciones") or f"CF-{equipo.codigo_inventario}"
+            }
+            CondicionesFuncionamiento.objects.update_or_create(equipo=equipo, defaults=defaults_cf)
+
+        return JsonResponse({"Message": "Equipo actualizado exitosamente"})
+
+
+# ----------------------------------------------------------------------
+# VISTA GENERAL (Búsqueda, Lista y Filtros)
+# ----------------------------------------------------------------------
+@method_decorator(csrf_exempt, name='dispatch')
+class EquipoView(View):
+    def get(self, request):
+        queryset = Equipo.objects.all()
+
+        # --- FILTRO ACTIVO / BAJA ---
+        mostrar_bajas = request.GET.get('mostrar_bajas')
+        if mostrar_bajas == 'true':
+            queryset = queryset.filter(activo=False)
+        else:
+            queryset = queryset.filter(activo=True)
+
+        # Búsqueda general (?q=)
+        query = request.GET.get('q', '').strip()
+        if query:
+            queryset = queryset.filter(
+                Q(nombre__icontains=query) | 
+                Q(codigo_inventario__icontains=query)
+            )
+
+        # Filtros Específicos
+        sede_nombre = request.GET.get('sede_nombre')
+        servicio_nombre = request.GET.get('servicio_nombre')
+        marca = request.GET.get('marca')
+        modelo = request.GET.get('modelo')
+        serie = request.GET.get('serie')
+        codigo_ips = request.GET.get('codigo_ips')
+        registro_invima = request.GET.get('registro_invima')
+
+        if sede_nombre: queryset = queryset.filter(sede__nombre=sede_nombre)
+        if servicio_nombre: queryset = queryset.filter(servicio__nombre=servicio_nombre)
+        if marca: queryset = queryset.filter(marca=marca)
+        if modelo: queryset = queryset.filter(modelo=modelo)
+        if serie: queryset = queryset.filter(serie=serie)
+        if codigo_ips: queryset = queryset.filter(codigo_ips=codigo_ips)
+
+        # Campos necesarios para el frontend
+        equipos = list(queryset.values(
+            'codigo_inventario', 'nombre', 'marca', 'modelo', 
+            'sede__nombre', 'servicio__nombre', 'serie', 
+            'codigo_ips', 'registro_invima', 'clasificacion_riesgo',
+            'activo', 'fecha_baja', 'motivo_baja'
+        ))
+
+        if equipos:
+            return JsonResponse({"Message": "Success", "equipos": equipos})
+        else:
+            return JsonResponse({"Message": "No se encontraron equipos", "equipos": []})
+
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+        except Exception:
+            return JsonResponse({"Message": "JSON inválido"}, status=400)
+
         required = ["sede", "nombre", "codigo_inventario", "ubicacion"]
         missing = [f for f in required if not data.get(f)]
         if missing:
             return JsonResponse({"Message": f"Faltan campos obligatorios: {', '.join(missing)}"}, status=400)
 
-        # --- Sede (obligatoria) ---
         try:
             sede_obj = Sede.objects.get(codigo_sede=data["sede"])
         except Sede.DoesNotExist:
-            return JsonResponse({"Message": "Codigo de sede no valido"}, status=400)
+            return JsonResponse({"Message": "Código de sede no válido"}, status=400)
 
-        # --- Servicio: si viene y no existe -> crear ---
         servicio_obj = None
         if data.get("servicio"):
             svc = data.get("servicio")
-            # si envían código de servicio (código_servicio) intentamos por código, si no por nombre
             try:
                 servicio_obj = Servicio.objects.get(codigo_servicio=svc)
             except Servicio.DoesNotExist:
-                # intentar buscar por nombre
                 try:
                     servicio_obj = Servicio.objects.get(nombre__iexact=svc, sede=sede_obj)
                 except Servicio.DoesNotExist:
-                    # crear nuevo servicio con código generado sencillo
                     codigo_gen = f"SVC-{sede_obj.codigo_sede}-{svc[:10].upper().replace(' ','')}"
-                    servicio_obj = Servicio.objects.create(
-                        codigo_servicio=codigo_gen,
-                        sede=sede_obj,
-                        nombre=svc
-                    )
+                    servicio_obj = Servicio.objects.create(codigo_servicio=codigo_gen, sede=sede_obj, nombre=svc)
 
-        # --- Ubicación: id o nombre; crear si nombre no existe ---
         ubicacion_obj = None
         if data.get("ubicacion"):
             try:
                 ubicacion_obj = Ubicacion.objects.get(id_ubicacion=int(data["ubicacion"]))
             except (ValueError, TypeError, Ubicacion.DoesNotExist):
-                # buscar por nombre
                 try:
                     ubicacion_obj = Ubicacion.objects.get(nombre__iexact=data["ubicacion"])
                 except Ubicacion.DoesNotExist:
-                    # crear nueva ubicacion
                     ubicacion_obj = Ubicacion.objects.create(nombre=data["ubicacion"])
 
-        # --- Multi-select eje misional (si viene lista) ---
+        def ni_or(val):
+            if val is None: return "NI"
+            if isinstance(val, str) and val.strip() == "": return "NI"
+            return val
+
         clas_misional = data.get("clasificacion_misional")
         if isinstance(clas_misional, list):
             clas_misional = "/".join([c for c in clas_misional if c])
-        # si viene string lo dejamos tal cual
 
-        # --- Helper: rellenar 'NI' por defecto para campos vacíos (strings) ---
-        def ni_or(val):
-            if val is None:
-                return "NI"
-            if isinstance(val, str) and val.strip() == "":
-                return "NI"
-            return val
-
-        # Campos string del modelo (según tu modelo en el PDF)
-        # (ajusta si tu modelo añade/quita campos)
         payload = {
             "codigo_inventario": data["codigo_inventario"],
             "nombre": data.get("nombre"),
@@ -361,7 +395,7 @@ class EquipoView(View):
             "servicio": servicio_obj,
             "ubicacion": ubicacion_obj,
             "marca": ni_or(data.get("marca")),
-            "modelo": data.get("modelo"),  # tu requisito: modelo no se puede cambiar (lo guardamos exacto)
+            "modelo": data.get("modelo"),
             "serie": ni_or(data.get("serie")),
             "clasificacion_misional": ni_or(clas_misional),
             "clasificacion_ips": ni_or(data.get("clasificacion_ips")),
@@ -369,18 +403,17 @@ class EquipoView(View):
             "registro_invima": ni_or(data.get("registro_invima")),
             "modificacionUbi": ni_or(data.get("modificacionUbi")),
             "modificacionactivo": ni_or(data.get("modificacionactivo")),
-            "activo": True,  # FORZADO a True
+            "activo": True,
             "fecha_baja": ni_or(data.get("fecha_baja")),
             "motivo_baja": ni_or(data.get("motivo_baja")),
         }
 
-        # Insertar equipo (evitar sobre-escribir campos que no están en modelo)
         try:
             Equipo.objects.create(**payload)
         except Exception as e:
             return JsonResponse({"Message": "Error creando equipo", "detail": str(e)}, status=500)
 
-        # --- Si viene 'historial' crear registro ---
+        # Crear relaciones opcionales
         if data.get("historial"):
             h = data.get("historial")
             try:
@@ -400,31 +433,26 @@ class EquipoView(View):
                     numero_documento=ni_or(h.get("numero_documento")),
                     valor_compra=ni_or(h.get("valor_compra")),
                 )
-            except Exception:
-                # no abortamos la creación del equipo por un error en historial
-                pass
+            except Exception: pass
 
-        # --- Documentos ---
         if data.get("documentos"):
-            d = data.get("documentos")
-            try:
-                Documento.objects.create(
-                    id_documento=d.get("id_documento") or f"D-{data['codigo_inventario']}",
-                    equipo=Equipo.objects.get(codigo_inventario=data["codigo_inventario"]),
-                    hoja_vida=bool(d.get("hoja_vida")),
-                    registro_importacion=bool(d.get("registro_importacion")),
-                    manual_operacion=bool(d.get("manual_operacion")),
-                    manual_mantenimiento=bool(d.get("manual_mantenimiento")),
-                    guia_uso=bool(d.get("guia_uso")),
-                    instructivo_rapido=bool(d.get("instructivo_rapido")),
-                    protocolo_mto_prev=bool(d.get("protocolo_mto_prev")),
-                    frecuencia_metrologica_fabricante=ni_or(d.get("frecuencia_metrologica_fabricante")),
-                    observaciones=ni_or(d.get("observaciones")),
-                )
-            except Exception:
-                pass
+             d = data.get("documentos")
+             try:
+                 Documento.objects.create(
+                     id_documento=d.get("id_documento") or f"D-{data['codigo_inventario']}",
+                     equipo=Equipo.objects.get(codigo_inventario=data["codigo_inventario"]),
+                     hoja_vida=bool(d.get("hoja_vida")),
+                     registro_importacion=bool(d.get("registro_importacion")),
+                     manual_operacion=bool(d.get("manual_operacion")),
+                     manual_mantenimiento=bool(d.get("manual_mantenimiento")),
+                     guia_uso=bool(d.get("guia_uso")),
+                     instructivo_rapido=bool(d.get("instructivo_rapido")),
+                     protocolo_mto_prev=bool(d.get("protocolo_mto_prev")),
+                     frecuencia_metrologica_fabricante=ni_or(d.get("frecuencia_metrologica_fabricante")),
+                     observaciones=ni_or(d.get("observaciones"))
+                 )
+             except: pass
 
-        # --- Metrologia Administrativa ---
         if data.get("metrologia_admin"):
             m = data.get("metrologia_admin")
             try:
@@ -436,10 +464,8 @@ class EquipoView(View):
                     calibracion=bool(m.get("calibracion")),
                     frecuencia_calibracion_anual=ni_or(m.get("frecuencia_calibracion_anual")),
                 )
-            except Exception:
-                pass
+            except Exception: pass
 
-        # --- Metrologia Tecnica ---
         if data.get("metrologia_tecnica"):
             t = data.get("metrologia_tecnica")
             try:
@@ -452,10 +478,8 @@ class EquipoView(View):
                     rango_trabajo=ni_or(t.get("rango_trabajo")),
                     error_maximo_permitido=ni_or(t.get("error_maximo_permitido")),
                 )
-            except Exception:
-                pass
+            except Exception: pass
 
-        # --- Condiciones de funcionamiento ---
         if data.get("condiciones"):
             c = data.get("condiciones")
             try:
@@ -470,246 +494,33 @@ class EquipoView(View):
                     peso=ni_or(c.get("peso")),
                     otros=ni_or(c.get("otros")),
                 )
-            except Exception:
-                pass
+            except Exception: pass
 
         return JsonResponse({"Message": "Equipo creado exitosamente"})
 
-    def put(self, request, codigo_inventario=None):
-            """
-            Actualiza un Equipo existente + objetos relacionados.
-            """
-            try:
-                data = json.loads(request.body)
-            except Exception:
-                return JsonResponse({"Message": "JSON inválido"}, status=400)
-
-            # 1. Validar que el equipo exista
-            if not codigo_inventario:
-                return JsonResponse({"Message": "Debe proporcionar el código de inventario en la URL"}, status=400)
-
-            try:
-                equipo = Equipo.objects.get(codigo_inventario=codigo_inventario)
-            except Equipo.DoesNotExist:
-                return JsonResponse({"Message": "Equipo no encontrado"}, status=404)
-
-            # --- Helper: rellenar 'NI' por defecto ---
-            def ni_or(val):
-                if val is None:
-                    return "NI"
-                if isinstance(val, str) and val.strip() == "":
-                    return "NI"
-                return val
-
-            # 2. Procesar Relaciones (Sede, Servicio, Ubicación)
-            # --- Sede ---
-            if data.get("sede"):
-                try:
-                    sede_obj = Sede.objects.get(codigo_sede=data["sede"])
-                    equipo.sede = sede_obj
-                except Sede.DoesNotExist:
-                    return JsonResponse({"Message": "Codigo de sede no valido"}, status=400)
-
-            # --- Servicio ---
-            if data.get("servicio"):
-                svc = data.get("servicio")
-                try:
-                    # Intenta buscar por código
-                    servicio_obj = Servicio.objects.get(codigo_servicio=svc)
-                except Servicio.DoesNotExist:
-                    try:
-                        # Intenta buscar por nombre
-                        servicio_obj = Servicio.objects.get(nombre__iexact=svc, sede=equipo.sede)
-                    except Servicio.DoesNotExist:
-                        # Crear nuevo
-                        codigo_gen = f"SVC-{equipo.sede.codigo_sede}-{svc[:10].upper().replace(' ','')}"
-                        servicio_obj = Servicio.objects.create(
-                            codigo_servicio=codigo_gen,
-                            sede=equipo.sede,
-                            nombre=svc
-                        )
-                equipo.servicio = servicio_obj
-
-            # --- Ubicación ---
-            if data.get("ubicacion"):
-                try:
-                    ubicacion_obj = Ubicacion.objects.get(id_ubicacion=int(data["ubicacion"]))
-                except (ValueError, TypeError, Ubicacion.DoesNotExist):
-                    try:
-                        ubicacion_obj = Ubicacion.objects.get(nombre__iexact=data["ubicacion"])
-                    except Ubicacion.DoesNotExist:
-                        ubicacion_obj = Ubicacion.objects.create(nombre=data["ubicacion"])
-                equipo.ubicacion = ubicacion_obj
-
-            # 3. Actualizar campos directos del Equipo
-            equipo.nombre = data.get("nombre", equipo.nombre)
-            equipo.codigo_ips = ni_or(data.get("codigo_ips"))
-            equipo.codigo_ecri = ni_or(data.get("codigo_ecri"))
-            equipo.responsable = ni_or(data.get("responsable"))
-            equipo.marca = ni_or(data.get("marca"))
-            # El modelo NO se actualiza según tus reglas, pero si quisieras: 
-            # equipo.modelo = data.get("modelo", equipo.modelo) 
-            equipo.serie = ni_or(data.get("serie"))
-            
-            # Multi-select eje misional
-            clas_misional = data.get("clasificacion_misional")
-            if isinstance(clas_misional, list):
-                equipo.clasificacion_misional = "/".join([c for c in clas_misional if c])
-            elif clas_misional:
-                equipo.clasificacion_misional = ni_or(clas_misional)
-
-            equipo.clasificacion_ips = ni_or(data.get("clasificacion_ips"))
-            equipo.clasificacion_riesgo = ni_or(data.get("clasificacion_riesgo"))
-            equipo.registro_invima = ni_or(data.get("registro_invima"))
-            
-            # Campos de baja / activo
-            equipo.activo = data.get("activo", True) # Por defecto True si no viene
-            equipo.fecha_baja = ni_or(data.get("fecha_baja"))
-            equipo.motivo_baja = ni_or(data.get("motivo_baja"))
-
-            try:
-                equipo.save()
-            except Exception as e:
-                return JsonResponse({"Message": "Error actualizando equipo", "detail": str(e)}, status=500)
-
-            # 4. Actualizar o Crear Objetos Relacionados (Update or Create)
-            
-            # --- Historial ---
-            if data.get("historial"):
-                h = data.get("historial")
-                defaults_h = {
-                    "tiempo_vida_anos": ni_or(h.get("tiempo_vida_anos")),
-                    "fecha_adquisicion": str(h.get("fecha_adquisicion")) if h.get("fecha_adquisicion") else "NI",
-                    "propietario": ni_or(h.get("propietario")),
-                    "fecha_fabricacion": ni_or(h.get("fecha_fabricacion")),
-                    "nit": ni_or(h.get("nit")),
-                    "proveedor": ni_or(h.get("proveedor")),
-                    "garantia": bool(h.get("garantia")),
-                    "fecha_caducidad_garantia": ni_or(h.get("fecha_caducidad_garantia")),
-                    "forma_adquisicion": ni_or(h.get("forma_adquisicion")),
-                    "tipo_documento": ni_or(h.get("tipo_documento")),
-                    "numero_documento": ni_or(h.get("numero_documento")),
-                    "valor_compra": ni_or(h.get("valor_compra")),
-                    # Si no existe, usamos este ID para crear
-                    "id_historial": h.get("id_historial") or f"H-{equipo.codigo_inventario}"
-                }
-                # Buscamos por equipo (relación OneToOne o ForeignKey inversa)
-                Historial.objects.update_or_create(equipo=equipo, defaults=defaults_h)
-
-            # --- Documentos ---
-            if data.get("documentos"):
-                d = data.get("documentos")
-                defaults_d = {
-                    "hoja_vida": bool(d.get("hoja_vida")),
-                    "registro_importacion": bool(d.get("registro_importacion")),
-                    "manual_operacion": bool(d.get("manual_operacion")),
-                    "manual_mantenimiento": bool(d.get("manual_mantenimiento")),
-                    "guia_uso": bool(d.get("guia_uso")),
-                    "instructivo_rapido": bool(d.get("instructivo_rapido")),
-                    "protocolo_mto_prev": bool(d.get("protocolo_mto_prev")),
-                    "frecuencia_metrologica_fabricante": ni_or(d.get("frecuencia_metrologica_fabricante")),
-                    "observaciones": ni_or(d.get("observaciones")),
-                    "id_documento": d.get("id_documento") or f"D-{equipo.codigo_inventario}"
-                }
-                Documento.objects.update_or_create(equipo=equipo, defaults=defaults_d)
-
-            # --- Metrologia Administrativa ---
-            if data.get("metrologia_admin"):
-                m = data.get("metrologia_admin")
-                defaults_ma = {
-                    "mantenimiento": bool(m.get("mantenimiento")),
-                    "frecuencia_mantenimiento_anual": ni_or(m.get("frecuencia_mantenimiento_anual")),
-                    "calibracion": bool(m.get("calibracion")),
-                    "frecuencia_calibracion_anual": ni_or(m.get("frecuencia_calibracion_anual")),
-                    "id_metrologia_adm": m.get("id_metrologia_adm") or f"MA-{equipo.codigo_inventario}"
-                }
-                MetrologiaAdministrativa.objects.update_or_create(equipo=equipo, defaults=defaults_ma)
-
-            # --- Metrologia Tecnica ---
-            if data.get("metrologia_tecnica"):
-                t = data.get("metrologia_tecnica")
-                defaults_mt = {
-                    "magnitud": ni_or(t.get("magnitud")),
-                    "rango_equipo": ni_or(t.get("rango_equipo")),
-                    "resolucion": ni_or(t.get("resolucion")),
-                    "rango_trabajo": ni_or(t.get("rango_trabajo")),
-                    "error_maximo_permitido": ni_or(t.get("error_maximo_permitido")),
-                    "id_metrologia_tecnica": t.get("id_metrologia_tecnica") or f"MT-{equipo.codigo_inventario}"
-                }
-                MetrologiaTecnica.objects.update_or_create(equipo=equipo, defaults=defaults_mt)
-
-            # --- Condiciones de funcionamiento ---
-            if data.get("condiciones"):
-                c = data.get("condiciones")
-                defaults_cf = {
-                    "voltaje": ni_or(c.get("voltaje")),
-                    "corriente": ni_or(c.get("corriente")),
-                    "humedad_relativa": ni_or(c.get("humedad_relativa")),
-                    "temperatura": ni_or(c.get("temperatura")),
-                    "dimensiones": ni_or(c.get("dimensiones")),
-                    "peso": ni_or(c.get("peso")),
-                    "otros": ni_or(c.get("otros")),
-                    "id_condiciones": c.get("id_condiciones") or f"CF-{equipo.codigo_inventario}"
-                }
-                CondicionesFuncionamiento.objects.update_or_create(equipo=equipo, defaults=defaults_cf)
-
-            return JsonResponse({"Message": "Equipo actualizado exitosamente"})
-
-    # ---------------------- AUTOCOMPLETE ----------------------
+# ----------------------------------------------------------------------
+# FUNCIONES AUXILIARES (Autocomplete, Excel, Bajas, Reactivar)
+# ----------------------------------------------------------------------
 @csrf_exempt
 def autocomplete_equipo(request):
     campo = request.GET.get("campo")
     q = request.GET.get("q", "").strip()
-
-    # Campos que SÍ pertenecen a Equipo
     campos_equipo = ["marca", "modelo", "responsable"]
 
-    # ============================
-    #   EQUIPO (marca, modelo, responsable)
-    # ============================
     if campo in campos_equipo:
-        resultados = (
-            Equipo.objects.filter(**{f"{campo}__icontains": q})
-            .exclude(**{campo: None})
-            .exclude(**{campo: ""})
-            .values_list(campo, flat=True)
-            .distinct()
-        )
-        return JsonResponse({"Message": "Success", "resultados": list(resultados)})
-
-    # ============================
-    #   HISTORIAL (proveedor, propietario)
-    # ============================
+        res = Equipo.objects.filter(**{f"{campo}__icontains": q}).exclude(**{campo: ""}).values_list(campo, flat=True).distinct()
+        return JsonResponse({"Message": "Success", "resultados": list(res)})
+    
     if campo in ["proveedor", "propietario"]:
-        resultados = (
-            Historial.objects.filter(**{f"{campo}__icontains": q})
-            .exclude(**{campo: None})
-            .exclude(**{campo: ""})
-            .values_list(campo, flat=True)
-            .distinct()
-        )
-        return JsonResponse({"Message": "Success", "resultados": list(resultados)})
+        res = Historial.objects.filter(**{f"{campo}__icontains": q}).exclude(**{campo: ""}).values_list(campo, flat=True).distinct()
+        return JsonResponse({"Message": "Success", "resultados": list(res)})
 
-    # ============================
-    #   METROLOGÍA TÉCNICA (magnitud)
-    # ============================
     if campo == "magnitud":
-        resultados = (
-            MetrologiaTecnica.objects.filter(magnitud__icontains=q)
-            .exclude(magnitud=None)
-            .exclude(magnitud="")
-            .values_list("magnitud", flat=True)
-            .distinct()
-        )
-        return JsonResponse({"Message": "Success", "resultados": list(resultados)})
+        res = MetrologiaTecnica.objects.filter(magnitud__icontains=q).exclude(magnitud="").values_list("magnitud", flat=True).distinct()
+        return JsonResponse({"Message": "Success", "resultados": list(res)})
 
     return JsonResponse({"Message": "Campo no permitido"}, status=400)
 
-# views.py (Después de los imports, antes de la primera clase View)
-
-# ----------------------------------------------------------------------
-# Helper para aplanar el diccionario de datos (para una mejor presentación en Excel)
-# ----------------------------------------------------------------------
 def flatten_data(data):
     """
     Toma el diccionario de datos anidados del equipo y lo aplana
@@ -848,48 +659,42 @@ def descargar_equipo_xlsx(request, codigo_inventario):
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
 
     return response
-
-
 @csrf_exempt
 def dar_baja_equipo(request, codigo_inventario):
+    codigo_inventario = unquote(codigo_inventario)
     if request.method != "PUT":
         return JsonResponse({"Message": "Método no permitido"}, status=405)
-
     try:
         equipo = Equipo.objects.get(codigo_inventario=codigo_inventario)
     except Equipo.DoesNotExist:
         return JsonResponse({"Message": "Equipo no encontrado"}, status=404)
-
+    
     data = json.loads(request.body)
-
     motivo = data.get("motivo_baja", "").strip()
-    usuario = data.get("usuario", "desconocido")
-
     if not motivo:
         return JsonResponse({"Message": "Debe ingresar un motivo de baja"}, status=400)
-
-    # Guardar datos de baja
-    from datetime import datetime
+    
     fecha_hoy = datetime.now().strftime("%Y-%m-%d %H:%M")
-
     equipo.motivo_baja = motivo
     equipo.fecha_baja = fecha_hoy
     equipo.activo = False
     equipo.save()
+    return JsonResponse({"Message": "Equipo dado de baja correctamente", "fecha_baja": fecha_hoy})
+
+@csrf_exempt
+def reactivar_equipo(request, codigo_inventario):
+    if request.method != "PUT":
+        return JsonResponse({"Message": "Método no permitido"}, status=405)
+    try:
+        equipo = Equipo.objects.get(codigo_inventario=codigo_inventario)
+    except Equipo.DoesNotExist:
+        return JsonResponse({"Message": "Equipo no encontrado"}, status=404)
     
-    return JsonResponse({
-        "Message": "Equipo dado de baja correctamente",
-        "fecha_baja": fecha_hoy
-    })
-
-
-
-
-
-
-
-
-
+    equipo.activo = True
+    equipo.fecha_baja = None
+    equipo.motivo_baja = None 
+    equipo.save()
+    return JsonResponse({"Message": "Equipo reactivado exitosamente."})
 
 
 

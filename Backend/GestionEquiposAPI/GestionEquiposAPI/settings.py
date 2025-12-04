@@ -38,7 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'APIEquipos',
-    'APILogin',
+    "APILogin.apps.ApiloginConfig",
     'corsheaders',
 ]
 

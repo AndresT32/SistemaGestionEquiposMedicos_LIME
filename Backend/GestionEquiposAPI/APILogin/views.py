@@ -20,8 +20,9 @@ class LoginView(View):
         return JsonResponse({"message": "Success", "users": users})
 
     def post(self, request):
+
         # -----------------------------
-        # 1. Validación del body
+        # 1. Validación del body JSON
         # -----------------------------
         try:
             data = json.loads(request.body.decode('utf-8'))
@@ -37,7 +38,28 @@ class LoginView(View):
         rol = data.get("rol")
 
         # ==========================
-        # 2. Registro de usuario
+        # A. Validar clave registro
+        # ==========================
+        if accion == "validar_registro":
+            clave = data.get("clave")
+
+            admin = Login.objects.filter(rol="admin").first()
+
+            if not admin:
+                return JsonResponse({
+                    "success": False,
+                    "error": "No existe un usuario con rol ADMIN en la base"
+                }, status=404)
+
+            if check_password(clave, admin.password):
+                return JsonResponse({"success": True})
+
+            return JsonResponse({
+                "success": False,
+                "error": "Clave de administrador incorrecta"
+            })
+        # ==========================
+        # B. Registrar usuario nuevo
         # ==========================
         if accion == "registro":
 
@@ -59,7 +81,7 @@ class LoginView(View):
             })
 
         # ==========================
-        # 3. Inicio de sesión
+        # C. Login
         # ==========================
         if accion == "login":
 
@@ -85,7 +107,42 @@ class LoginView(View):
             }, status=401)
 
         # ==========================
-        # 4. Acción no válida
+        # D. Cambiar contraseña ADMIN
+        # ==========================
+        if accion == "cambiar_password_admin":
+
+            password_actual = data.get("password_actual")
+            password_nueva = data.get("password_nueva")
+
+            if not (password_actual and password_nueva):
+                return JsonResponse({
+                    "success": False,
+                    "error": "Datos incompletos"
+                }, status=400)
+
+            admin = Login.objects.filter(rol="admin").first()
+
+            if not admin:
+                return JsonResponse({
+                    "success": False,
+                    "error": "No existe un usuario con rol ADMIN"
+                }, status=404)
+
+            if not check_password(password_actual, admin.password):
+                return JsonResponse({
+                    "success": False,
+                    "error": "La contraseña actual es incorrecta"
+                }, status=401)
+
+            admin.password = make_password(password_nueva)
+            admin.save()
+
+            return JsonResponse({
+                "success": True,
+                "message": "Contraseña actualizada correctamente"
+            })
+        # ==========================
+        # E. Acción no válida
         # ==========================
         return JsonResponse({
             "success": False,

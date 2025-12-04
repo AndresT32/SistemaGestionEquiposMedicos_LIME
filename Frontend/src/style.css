@@ -77,4 +77,30 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+/* --- MEJORA RESPONSIVIDAD (Agregado) --- */
+
+/* Hace que las columnas se conviertan en 1 sola en pantallas pequeñas */
+@media (max-width: 768px) {
+    .cols-2, 
+    .cols-3, 
+    .cols-3.compacto {
+        grid-template-columns: 1fr !important; /* Fuerza 1 columna */
+        gap: 15px;
+    }
+
+    .page-wrap {
+        padding: 10px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    /* Ajustar tablas para que tengan scroll horizontal en vez de romper el diseño */
+    .table-wrapper {
+        overflow-x: auto;
+    }
+    
+    .tabla-resultados, .info-table {
+        min-width: 600px; /* Asegura un ancho mínimo para leer */
+    }
+}
 

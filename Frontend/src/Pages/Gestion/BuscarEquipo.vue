@@ -40,7 +40,7 @@
           <option v-for="s in sedes" :key="s.codigo_sede" :value="s.nombre">
             {{ s.nombre }}
           </option>
-          <option value="">Todas las Sedes</option>
+  
         </select>
       </div>
 
@@ -49,7 +49,7 @@
         <select v-model="selectedMarca" class="filter-select">
           <option disabled value="">Seleccione una marca</option>
           <option v-for="m in marcas" :key="m" :value="m">{{ m }}</option>
-          <option value="">Todas las Marcas</option>
+
         </select>
       </div>
 
@@ -58,7 +58,7 @@
         <select v-model="selectedModelo" class="filter-select">
           <option disabled value="">Seleccione un modelo</option>
           <option v-for="m in modelos" :key="m" :value="m">{{ m }}</option>
-          <option value="">Todos los Modelos</option>
+
         </select>
       </div>
 
@@ -67,7 +67,7 @@
         <select v-model="selectedSerie" class="filter-select">
           <option disabled value="">Seleccione una serie</option>
           <option v-for="s in series" :key="s" :value="s">{{ s }}</option>
-          <option value="">Todas las Series</option>
+ 
         </select>
       </div>
 
@@ -76,7 +76,7 @@
         <select v-model="selectedCodigoIps" class="filter-select">
           <option disabled value="">Seleccione un código IPS</option>
           <option v-for="c in ips_codigos" :key="c" :value="c">{{ c }}</option>
-          <option value="">Todos los Cód. IPS</option>
+
         </select>
       </div>
 
@@ -85,7 +85,7 @@
         <select v-model="selectedServicio" class="filter-select">
           <option disabled value="">Seleccione un servicio</option>
           <option v-for="s in servicios" :key="s" :value="s">{{ s }}</option>
-          <option value="">Todos los Servicios</option>
+ 
         </select>
       </div>
 
@@ -370,7 +370,7 @@ async aplicarFiltros() {
         // 🚨 CORRECCIÓN: Quitamos encodeURIComponent()
         // URLSearchParams ya codifica automáticamente los valores.
         if (this.selectedSede) {
-            params.append('sede__nombre', this.selectedSede);
+            params.append('sede_nombre', this.selectedSede);
         }
         if (this.selectedMarca) {
             params.append('marca', this.selectedMarca);
@@ -385,7 +385,7 @@ async aplicarFiltros() {
             params.append('codigo_ips', this.selectedCodigoIps);
         }
         if (this.selectedServicio) {
-            params.append('servicio__nombre', this.selectedServicio);
+            params.append('servicio_nombre', this.selectedServicio);
         }
 
         // Si no hay ningún filtro aplicado, evitamos la llamada a la API

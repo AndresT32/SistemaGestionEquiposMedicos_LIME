@@ -236,6 +236,8 @@ class CondicionesFuncionamiento(models.Model):
 #     REGISTRO DE ACTIVIDADES
 # ============================
 
+# ... (código anterior igual)
+
 class RegistroActividades(models.Model):
     id_registro = models.AutoField(primary_key=True)
     equipo = models.ForeignKey(
@@ -243,9 +245,16 @@ class RegistroActividades(models.Model):
         on_delete=models.PROTECT,
         db_column='equipo_codigo'
     )
-    usuario = models.CharField(max_length=150)  # username del login
+    usuario = models.CharField(max_length=140) # username del login
     tipo_modificacion = models.CharField(max_length=200)
-    fecha_modificacion = models.CharField(max_length=20, blank=True, null=True)  # string
+    fecha_modificacion = models.CharField(max_length=20, blank=True, null=True) # string
+    
+    # --- NUEVAS COLUMNAS SOLICITADAS ---
+    motivoCambio = models.CharField(max_length=355, blank=True, null=True)
+    origenUbi = models.CharField(max_length=250, blank=True, null=True)
+    destinoUbi = models.CharField(max_length=250, blank=True, null=True)
+    responsable = models.CharField(max_length=150, blank=True, null=True)
+    # -----------------------------------
 
     class Meta:
         db_table = 'registro_actividades'
